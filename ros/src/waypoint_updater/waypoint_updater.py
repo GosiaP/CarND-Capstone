@@ -49,7 +49,7 @@ class WaypointUpdater(object):
 
     def pose_cb(self, msg):
         if self.waypoints_ref is not None:
-             rospy.loginfo('waypoint_updater : pose data (%.2f, %.2f, %.2f)', msg.pose.position.x, msg.pose.position.y, msg.pose.position.z)
+            rospy.loginfo('waypoint_updater : pose data (%.2f, %.2f, %.2f)', msg.pose.position.x, msg.pose.position.y, msg.pose.position.z)
 
             # calculate cur_wp_ref_idx
             min_dist = 100000.0
