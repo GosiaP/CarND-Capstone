@@ -44,13 +44,71 @@ class WaypointUpdater(object):
         # member variables you need below
         self.waypoints_ref = None
         self.cur_wp_ref_idx = 0
-        self.traffic_wp_idx = -1
-        self.waypoints_with_reduced_velocity = []
 
         rospy.spin()
 
     def pose_cb(self, msg):
-        # TODO: Implement
+        if self.waypoints_ref is not None:
+             rospy.loginfo('waypoint_updater : pose data (%.2f, %.2f, %.2f)', msg.pose.position.x, msg.pose.position.y, msg.pose.position.z)
+
+            # calculate cur_wp_ref_idx
+            min_dist = 100000.0
+            min_idx  = self.cur_wp_ref_idx
+
+            prev_Last_wp_index = self.cur_wp_ref_idx
+            start_idx = self.cur_wp_ref_idx - 2
+
+            if (start_idx < 0):
+                start_idx = start_idx + len(self.waypoints_ref.waypoints)
+
+            for i in range(start_idx, start_idx + len(self.waypoints_ref.waypoints)):
+                idx = i % len(self.waypoints_ref.waypoints)
+                cur_dist = self.eucl_dist_3d(msg.pose.position, self.waypoints_ref.waypoints[idx].pose.pose.position)
+
+                if (cur_dist < min_dist):
+                    min_dist = cur_dist
+                    min_idx  = idx
+
+                if (min_dist < 5 and cur_dist > 10 * min_dist):
+                    break
+
+            dx = self.waypoints_ref.waypoints[min_idx].pose.pose.position.x - msg.pose.position.x
+            dy = self.waypoints_ref.waypoints[min_idx].pose.pose.position.y - msg.pose.position.y
+
+            heading = np.arctan2(dy, dx)
+            (roll, pitch, yaw) = self.get_roll_pitch_yaw(msg.pose.orientation)
+            angle = np.abs(yaw - heading)
+            angle = np.minimum(angle, 2.0 * np.pi - angle)
+            if (angle > np.pi / 4.0):
+                self.cur_wp_ref_idx = (min_idx + 1) % len(self.waypoints_ref.waypoints)
+            else:
+                self.cur_wp_ref_idx = min_idx
+
+            # Calculate self.waypoints_out
+            #ONLY if the waypoint really has changed
+            if prev_Last_wp_index != self.cur_wp_ref_idx:
+              #send an update on the waypoint list
+              self.filter_and_send_waypoints()
+              wp = self.waypoints_ref.waypoints[self.cur_wp_ref_idx]
+              waypoint_pos = wp.pose.pose.position
+              waypoint_speed = wp.twist.twist.linear.x
+              rospy.loginfo('waypoint_updater pub: from index %i: (%.2f, %.2f, %.2f) with speed %.2f...'\
+                            , self.cur_wp_ref_idx, waypoint_pos.x, waypoint_pos.y, waypoint_pos.z, waypoint_speed)
+        pass
+
+
+    def filter_and_send_waypoints(self):
+        if self.waypoints_ref is not None:
+            rWaypoints = Lane()
+            pos = self.cur_wp_ref_idx
+            wp = self.waypoints_ref.waypoints
+            rWaypoints.header = self.waypoints_ref.header
+            rWaypoints.waypoints = wp[pos: min(pos + LOOKAHEAD_WPS, len(wp))]
+            size = len(rWaypoints.waypoints)
+            if size < LOOKAHEAD_WPS:
+                rWaypoints.waypoints += wp[:LOOKAHEAD_WPS - size]
+            self.final_waypoints_pub.publish(rWaypoints)
+
         pass
 
     def waypoints_cb(self, waypoints):
@@ -61,7 +119,7 @@ class WaypointUpdater(object):
           if self.get_waypoint_velocity(wp) > self.c_max_velocity:
             wp.twist.twist.linear.x = self.c_max_velocity
             counter += 1
-        rospy.loginfo('waypoints_cb with {0} wpnts'\
+        rospy.loginfo('waypoint_updater with {0} wpnts'\
                       ' - total of {1} wpnts with max speed'\
                       .format(len(self.waypoints_ref.waypoints), counter))
         pass
@@ -91,26 +149,35 @@ class WaypointUpdater(object):
         return (wp_idx-1) % len(self.waypoints_ref.waypoints)
       return wp_idx
 
-    def dist_3d(self, a, b):
+    def eucl_dist_3d(self, a, b):
         return math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
 
     def distance(self, wp_idx_first, wp_idx_last):
         if None == self.waypoints_ref:
           return 0    
         dist = 0
-        wp_idx_distance = 0
-        #consider overflows in waypoint list as well
+
         all_wp_length = len(self.waypoints_ref.waypoints)
         if(wp_idx_first < wp_idx_last):
           wp_idx_distance = wp_idx_last-wp_idx_first
         else:
           wp_idx_distance = all_wp_length - wp_idx_first + wp_idx_last
+
         for i in range(wp_idx_first, (wp_idx_first+wp_idx_distance)):
             idx = i % all_wp_length
             next_idx = (idx + 1) % all_wp_length
             dist += self.dist_3d(self.waypoints_ref.waypoints[idx].pose.pose.position, self.waypoints_ref.waypoints[next_idx].pose.pose.position)
         return dist
 
+    def get_roll_pitch_yaw(self, ros_quaternion):
+        orientation_list = [ros_quaternion.x, ros_quaternion.y, ros_quaternion.z, ros_quaternion.w]
+        # returns (roll, pitch, yaw)
+        return euler_from_quaternion(orientation_list)
+
+
+    def get_ros_quaternion(roll, pitch, yaw):
+        return Quaternion(*quaternion_from_euler(roll, pitch, yaw))  # returns Quaternion
+        
 
 if __name__ == '__main__':
     try:
