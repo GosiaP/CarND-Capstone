@@ -27,6 +27,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 DECELERATION = 2.0 # Absolute value of planned deceleration in m/s^2
 
+
 class WaypointUpdater(object):
     def __init__(self):
         rospy.init_node('waypoint_updater')
@@ -58,6 +59,7 @@ class WaypointUpdater(object):
             prev_Last_wp_index = self.cur_wp_ref_idx
             start_idx = self.cur_wp_ref_idx - 2
 
+            # find closest waypoint
             if (start_idx < 0):
                 start_idx = start_idx + len(self.waypoints_ref.waypoints)
 
@@ -84,11 +86,9 @@ class WaypointUpdater(object):
             else:
                 self.cur_wp_ref_idx = min_idx
 
-            # Calculate self.waypoints_out
-            #ONLY if the waypoint really has changed
+            # calculate self.waypoints_out only if the waypoint really has changed
             if prev_Last_wp_index != self.cur_wp_ref_idx:
-              #send an update on the waypoint list
-              self.filter_and_send_waypoints()
+              self.publish_waypoints()
               wp = self.waypoints_ref.waypoints[self.cur_wp_ref_idx]
               waypoint_pos = wp.pose.pose.position
               waypoint_speed = wp.twist.twist.linear.x
@@ -96,29 +96,33 @@ class WaypointUpdater(object):
                             , self.cur_wp_ref_idx, waypoint_pos.x, waypoint_pos.y, waypoint_pos.z, waypoint_speed)
         pass
 
-
-    def filter_and_send_waypoints(self):
+    def publish_waypoints(self):
         if self.waypoints_ref is not None:
-            rWaypoints = Lane()
-            pos = self.cur_wp_ref_idx
+            lane = Lane()
+            lane.header = self.waypoints_ref.header
+
+            idx = self.cur_wp_ref_idx
             wp = self.waypoints_ref.waypoints
-            rWaypoints.header = self.waypoints_ref.header
-            rWaypoints.waypoints = wp[pos: min(pos + LOOKAHEAD_WPS, len(wp))]
-            size = len(rWaypoints.waypoints)
+
+            lane.waypoints = wp[idx: min(idx + LOOKAHEAD_WPS, len(wp))]
+            size = len(lane.waypoints)
             if size < LOOKAHEAD_WPS:
-                rWaypoints.waypoints += wp[:LOOKAHEAD_WPS - size]
-            self.final_waypoints_pub.publish(rWaypoints)
+                lane.waypoints += wp[:LOOKAHEAD_WPS - size]
+
+            self.final_waypoints_pub.publish(lane)
 
         pass
 
     def waypoints_cb(self, waypoints):
         self.waypoints_ref = waypoints
+
         # consider waypoints violates the max-speed condition
         counter = 0
         for wp in self.waypoints_ref.waypoints:
-          if self.get_waypoint_velocity(wp) > self.c_max_velocity:
-            wp.twist.twist.linear.x = self.c_max_velocity
-            counter += 1
+            if self.get_waypoint_velocity(wp) > self.c_max_velocity:
+                wp.twist.twist.linear.x = self.c_max_velocity
+                counter += 1
+
         rospy.loginfo('waypoint_updater with {0} wpnts'\
                       ' - total of {1} wpnts with max speed'\
                       .format(len(self.waypoints_ref.waypoints), counter))
@@ -140,28 +144,28 @@ class WaypointUpdater(object):
         pass
         
     def next_waypoint(self, wp_idx):
-      if self.waypoints_ref is not None:
-        return (wp_idx+1) % len(self.waypoints_ref.waypoints)
-      return wp_idx
+        if self.waypoints_ref is not None:
+            return (wp_idx+1) % len(self.waypoints_ref.waypoints)
+        return wp_idx
 
     def prev_waypoint(self, wp_idx):
-      if self.waypoints_ref is not None:
-        return (wp_idx-1) % len(self.waypoints_ref.waypoints)
-      return wp_idx
+        if self.waypoints_ref is not None:
+            return (wp_idx-1) % len(self.waypoints_ref.waypoints)
+        return wp_idx
 
     def eucl_dist_3d(self, a, b):
         return math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
 
     def distance(self, wp_idx_first, wp_idx_last):
-        if None == self.waypoints_ref:
-          return 0    
+        if self.waypoints_ref is None:
+            return 0
         dist = 0
 
         all_wp_length = len(self.waypoints_ref.waypoints)
         if(wp_idx_first < wp_idx_last):
-          wp_idx_distance = wp_idx_last-wp_idx_first
+            wp_idx_distance = wp_idx_last-wp_idx_first
         else:
-          wp_idx_distance = all_wp_length - wp_idx_first + wp_idx_last
+            wp_idx_distance = all_wp_length - wp_idx_first + wp_idx_last
 
         for i in range(wp_idx_first, (wp_idx_first+wp_idx_distance)):
             idx = i % all_wp_length
