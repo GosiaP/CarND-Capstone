@@ -38,34 +38,36 @@ class WaypointUpdater(object):
         # subscribe to required topics
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
+        rospy.Subscriber('/obstacle_waypoint', Int32, self.obstacle_cb)
 
         # publisher for final waypoints
         self.final_waypoints_pub = rospy.Publisher('/final_waypoints', Lane, queue_size=1)
 
         # member variables you need below
-        self.waypoints_ref = None
-        self.cur_wp_ref_idx = 0
+        self.waypoints_base = None
+        self.closet_wp_idx = 0
 
         rospy.spin()
 
     def pose_cb(self, msg):
-        if self.waypoints_ref is not None:
+        if self.waypoints_base is not None:
             rospy.loginfo('waypoint_updater : pose data (%.2f, %.2f, %.2f)', msg.pose.position.x, msg.pose.position.y, msg.pose.position.z)
 
-            # calculate cur_wp_ref_idx
+            # calculate closet_wp_idx
             min_dist = 100000.0
-            min_idx  = self.cur_wp_ref_idx
+            min_idx  = self.closet_wp_idx
 
-            prev_Last_wp_index = self.cur_wp_ref_idx
-            start_idx = self.cur_wp_ref_idx - 2
+            prev_closet_wp_idx = self.closet_wp_idx
+            start_idx = self.closet_wp_idx - 2
 
             # find closest waypoint
             if (start_idx < 0):
-                start_idx = start_idx + len(self.waypoints_ref.waypoints)
+                start_idx = start_idx + len(self.waypoints_base.waypoints)
 
-            for i in range(start_idx, start_idx + len(self.waypoints_ref.waypoints)):
-                idx = i % len(self.waypoints_ref.waypoints)
-                cur_dist = self.eucl_dist_3d(msg.pose.position, self.waypoints_ref.waypoints[idx].pose.pose.position)
+            for i in range(start_idx, start_idx + len(self.waypoints_base.waypoints)):
+                idx = i % len(self.waypoints_base.waypoints)
+                cur_dist = self.eucl_dist_3d(msg.pose.position, self.waypoints_base.waypoints[idx].pose.pose.position)
 
                 if (cur_dist < min_dist):
                     min_dist = cur_dist
@@ -74,35 +76,35 @@ class WaypointUpdater(object):
                 if (min_dist < 5 and cur_dist > 10 * min_dist):
                     break
 
-            dx = self.waypoints_ref.waypoints[min_idx].pose.pose.position.x - msg.pose.position.x
-            dy = self.waypoints_ref.waypoints[min_idx].pose.pose.position.y - msg.pose.position.y
+            dx = self.waypoints_base.waypoints[min_idx].pose.pose.position.x - msg.pose.position.x
+            dy = self.waypoints_base.waypoints[min_idx].pose.pose.position.y - msg.pose.position.y
 
             heading = np.arctan2(dy, dx)
             (roll, pitch, yaw) = self.get_roll_pitch_yaw(msg.pose.orientation)
             angle = np.abs(yaw - heading)
             angle = np.minimum(angle, 2.0 * np.pi - angle)
             if (angle > np.pi / 4.0):
-                self.cur_wp_ref_idx = (min_idx + 1) % len(self.waypoints_ref.waypoints)
+                self.closet_wp_idx = (min_idx + 1) % len(self.waypoints_base.waypoints)
             else:
-                self.cur_wp_ref_idx = min_idx
+                self.closet_wp_idx = min_idx
 
             # calculate self.waypoints_out only if the waypoint really has changed
-            if prev_Last_wp_index != self.cur_wp_ref_idx:
+            if prev_closet_wp_idx != self.closet_wp_idx:
               self.publish_waypoints()
-              wp = self.waypoints_ref.waypoints[self.cur_wp_ref_idx]
+              wp = self.waypoints_base.waypoints[self.closet_wp_idx]
               waypoint_pos = wp.pose.pose.position
               waypoint_speed = wp.twist.twist.linear.x
               rospy.loginfo('waypoint_updater pub: from index %i: (%.2f, %.2f, %.2f) with speed %.2f...'\
-                            , self.cur_wp_ref_idx, waypoint_pos.x, waypoint_pos.y, waypoint_pos.z, waypoint_speed)
+                            , self.closet_wp_idx, waypoint_pos.x, waypoint_pos.y, waypoint_pos.z, waypoint_speed)
         pass
 
     def publish_waypoints(self):
-        if self.waypoints_ref is not None:
+        if self.waypoints_base is not None:
             lane = Lane()
-            lane.header = self.waypoints_ref.header
+            lane.header = self.waypoints_base.header
 
-            idx = self.cur_wp_ref_idx
-            wp = self.waypoints_ref.waypoints
+            idx = self.closet_wp_idx
+            wp = self.waypoints_base.waypoints
 
             lane.waypoints = wp[idx: min(idx + LOOKAHEAD_WPS, len(wp))]
             size = len(lane.waypoints)
@@ -114,18 +116,18 @@ class WaypointUpdater(object):
         pass
 
     def waypoints_cb(self, waypoints):
-        self.waypoints_ref = waypoints
+        self.waypoints_base = waypoints
 
         # consider waypoints violates the max-speed condition
         counter = 0
-        for wp in self.waypoints_ref.waypoints:
+        for wp in self.waypoints_base.waypoints:
             if self.get_waypoint_velocity(wp) > self.c_max_velocity:
                 wp.twist.twist.linear.x = self.c_max_velocity
                 counter += 1
 
         rospy.loginfo('waypoint_updater with {0} wpnts'\
                       ' - total of {1} wpnts with max speed'\
-                      .format(len(self.waypoints_ref.waypoints), counter))
+                      .format(len(self.waypoints_base.waypoints), counter))
         pass
 
     def traffic_cb(self, msg):
@@ -144,24 +146,24 @@ class WaypointUpdater(object):
         pass
         
     def next_waypoint(self, wp_idx):
-        if self.waypoints_ref is not None:
-            return (wp_idx+1) % len(self.waypoints_ref.waypoints)
+        if self.waypoints_base is not None:
+            return (wp_idx+1) % len(self.waypoints_base.waypoints)
         return wp_idx
 
     def prev_waypoint(self, wp_idx):
-        if self.waypoints_ref is not None:
-            return (wp_idx-1) % len(self.waypoints_ref.waypoints)
+        if self.waypoints_base is not None:
+            return (wp_idx-1) % len(self.waypoints_base.waypoints)
         return wp_idx
 
     def eucl_dist_3d(self, a, b):
         return math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
 
     def distance(self, wp_idx_first, wp_idx_last):
-        if self.waypoints_ref is None:
+        if self.waypoints_base is None:
             return 0
         dist = 0
 
-        all_wp_length = len(self.waypoints_ref.waypoints)
+        all_wp_length = len(self.waypoints_base.waypoints)
         if(wp_idx_first < wp_idx_last):
             wp_idx_distance = wp_idx_last-wp_idx_first
         else:
@@ -170,7 +172,7 @@ class WaypointUpdater(object):
         for i in range(wp_idx_first, (wp_idx_first+wp_idx_distance)):
             idx = i % all_wp_length
             next_idx = (idx + 1) % all_wp_length
-            dist += self.dist_3d(self.waypoints_ref.waypoints[idx].pose.pose.position, self.waypoints_ref.waypoints[next_idx].pose.pose.position)
+            dist += self.dist_3d(self.waypoints_base.waypoints[idx].pose.pose.position, self.waypoints_base.waypoints[next_idx].pose.pose.position)
         return dist
 
     def get_roll_pitch_yaw(self, ros_quaternion):
