@@ -183,7 +183,7 @@ class WaypointUpdater(object):
             while distance_wp_tl < dec_dist:
               current_wp_speed = self.get_waypoint_velocity(all_wp[current_wp_idx])
               self.waypoints_decelareted.append( [current_wp_idx, current_wp_speed])
-              distance_wp_tl = self.dist_3d(all_wp[self.traffic_wp_idx].pose.pose.position, all_wp[prev_wp_idx].pose.pose.position)
+              distance_wp_tl = self.eucl_dist_3d(all_wp[self.traffic_wp_idx].pose.pose.position, all_wp[prev_wp_idx].pose.pose.position)
               wp_speed = 0.
               if distance_wp_tl < DISTANCE_SECURITY_ZERO_SPEED:
                 wp_speed = 0.
