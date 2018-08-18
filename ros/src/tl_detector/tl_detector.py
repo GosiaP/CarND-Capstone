@@ -246,10 +246,10 @@ class TLDetector(object):
                         found_light = True
                         # calculate vector from vehicle to traffic light in vehicle coordinate system
                         pose_light_dist = self.dist_3d(self.lights[tli].pose.pose.position, self.pose.pose.position)
-                        light_position = self.lights[tli].pose.pose.position
-                        dx_world = light_position.x - self.pose.pose.position.x
-                        dy_world = light_position.y - self.pose.pose.position.y
-                        dz_world = light_position.z - (self.pose.pose.position.z + self.camera_z)
+                        tlf_pos = self.lights[tli].pose.pose.position
+                        dx_world = tlf_pos.x - self.pose.pose.position.x
+                        dy_world = tlf_pos.y - self.pose.pose.position.y
+                        dz_world = tlf_pos.z - (self.pose.pose.position.z + self.camera_z)
                         (roll, pitch, yaw) = self.get_roll_pitch_yaw(self.pose.pose.orientation)
                         roll = 0.0  # value seems to be unreliable in bag file
                         pitch = 0.0 # value seems to be unreliable in bag file
@@ -271,29 +271,27 @@ class TLDetector(object):
                             dz_camera =  tmp[0][0]
 
                             # check if traffic light is visible from vehicle
-                            cropped_edge_len = int(round(self.image_scale / dz_camera))
-                            cropped_x_center = int(round(self.camera_f_x * (dx_camera / dz_camera) + self.camera_c_x))
-                            cropped_y_center = int(round(self.camera_f_y * (dy_camera / dz_camera) + self.camera_c_y))
-                            cropped_x_from = cropped_x_center - (cropped_edge_len/2)
-                            cropped_y_from = cropped_y_center - (cropped_edge_len/2)
-                            cropped_x_to   = cropped_x_from   + cropped_edge_len
-                            cropped_y_to   = cropped_y_from   + cropped_edge_len
+                            cut_edge_len = int(round(self.image_scale / dz_camera))
+                            cut_x_center = int(round(self.camera_f_x * (dx_camera / dz_camera) + self.camera_c_x))
+                            cut_y_center = int(round(self.camera_f_y * (dy_camera / dz_camera) + self.camera_c_y))
+                            cut_x_from = cut_x_center - (cut_edge_len/2)
+                            cut_y_from = cut_y_center - (cut_edge_len/2)
+                            cut_x_to   = cut_x_from   + cut_edge_len
+                            cut_y_to   = cut_y_from   + cut_edge_len
 
-                            if ( (cropped_x_to - cropped_x_from >= 32) and
-                                 (cropped_x_from >= 0) and (cropped_x_to < self.image_width) and
-                                 (cropped_y_from >= 0) and (cropped_y_to < self.image_height) ):
+                            if ( (cut_x_to - cut_x_from >= 32) and
+                                 (cut_x_from >= 0) and (cut_x_to < self.image_width) and
+                                 (cut_y_from >= 0) and (cut_y_to < self.image_height) ):
 
                                 light_idx = tli
 
                                 # works only in simulator
+                                # todo : use traffic lights classifier
                                 state = self.lights[light_idx].state
-
-                            else:
-                                light_pos = self.lights[tli].pose.pose.position
 
                         break
                 if (found_light):
-                    #early exit in case that we've detected a light
+                    # we detected a light
                     break
 
         if (light_idx != None):
