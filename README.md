@@ -1,5 +1,18 @@
 This is the project repo for the final project of the Udacity Self-Driving Car Nanodegree: Programming a Real Self-Driving Car. For more information about the project, see the project introduction [here](https://classroom.udacity.com/nanodegrees/nd013/parts/6047fe34-d93c-4f50-8336-b70ef10cb4b2/modules/e1a23b06-329a-4684-a717-ad476f0d8dff/lessons/462c933d-9f24-42d3-8bdc-a08a5fc866e4/concepts/5ab4b122-83e6-436d-850f-9f4d26627fd9).
 
+### Team setup
+This is an individual submission. Because of my job required buisness trips I was not available to work continually work on this project. Therefore I decided to do alone.
+Team:
+Malgorzata Plonka : mp.plonka@gmx.de
+
+#### 1. Remarks for reviewer
+The simulator requeires a huge CPU access and as my laptop has not good enough CPU it was very difficult for me to test the project with traffic lights classifier.
+Therefore I'm using the state of traffic light provided by simulator.
+I think the most important is to setup a comunication between ROS nodes and not concentrate on traffic light classification which was the subject of Term1.
+I's very pity that the sucessful project submission depends on hardware.
+
+
+
 Please use **one** of the two installation options, either native **or** docker installation.
 
 ### Native Installation
