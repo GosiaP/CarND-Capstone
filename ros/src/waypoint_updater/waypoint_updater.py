@@ -244,7 +244,7 @@ class WaypointUpdater(object):
         for i in range(wp_idx_first, (wp_idx_first+wp_idx_distance)):
             idx = i % all_wp_length
             next_idx = (idx + 1) % all_wp_length
-            dist += self.dist_3d(self.waypoints_base.waypoints[idx].pose.pose.position, self.waypoints_base.waypoints[next_idx].pose.pose.position)
+            dist += self.eucl_dist_3d(self.waypoints_base.waypoints[idx].pose.pose.position, self.waypoints_base.waypoints[next_idx].pose.pose.position)
         return dist
 
     def get_roll_pitch_yaw(self, ros_quaternion):
