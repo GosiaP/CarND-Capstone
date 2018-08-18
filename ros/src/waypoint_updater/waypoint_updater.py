@@ -26,6 +26,8 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 DECELERATION = 2.0 # Absolute value of planned deceleration in m/s^2
+DISTANCE_SECURITY_ZERO_SPEED = 2.
+DISTANCE_SECURITY_ONE_SPEED = 3.
 
 
 class WaypointUpdater(object):
@@ -47,6 +49,9 @@ class WaypointUpdater(object):
         # member variables you need below
         self.waypoints_base = None
         self.closet_wp_idx = 0
+
+        self.traffic_wp_idx = -1
+        self.waypoints_decelareted = []
 
         rospy.spin()
 
@@ -131,12 +136,79 @@ class WaypointUpdater(object):
         pass
 
     def traffic_cb(self, msg):
-        # TODO: Callback for /traffic_waypoint message. Implement
+        # Log status of incoming data
+        rospy.loginfo('waypoint_updater : traffic waypoint index %i', msg.data)
+        self.traffic_wp_idx = msg.data
+        self.decelerate_waypoints()
         pass
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
         pass
+
+    def decelerate_waypoints(self):
+#         # Calculate the unconstrained case (no traffic light / obstacle)
+        if None is self.waypoints_base:
+          return    
+
+        #use reference to avoid long names
+        all_wp = self.waypoints_base.waypoints
+        
+        # Consider traffic
+        # only if the decelerated waypoints isn't None, we need
+        # to recalculate the velocity of the waypoints
+        if (self.traffic_wp_idx != -1) and (0 == len(self.waypoints_decelareted)):
+            # Check if traffic light is in planning range
+            light_dist = self.distance(self.closet_wp_idx, self.traffic_wp_idx)
+            
+            # TODO: consider maximum comfortable jerk by choosing smooth velocity curve
+            # Determine required deceleration
+            dec        = DECELERATION
+            cur_speed  = self.get_waypoint_velocity(all_wp[self.closet_wp_idx])
+            dec_time   = (cur_speed - 1.) / dec
+            dec_dist   = 0.5 * dec * dec_time * dec_time
+            light_dist = self.distance(self.closet_wp_idx, self.traffic_wp_idx)
+            light_dist_plus_security = light_dist + DISTANCE_SECURITY_ONE_SPEED
+            if (light_dist_plus_security < dec_dist):
+                dec = 0.5 * cur_speed * cur_speed / dec_dist
+                rospy.logwarn('waypoint_updater no good deceleration %.2f m/s^2', dec)
+            else:
+                rospy.loginfo('waypoint_updater good deceleration %.2f m/s^2', dec)
+
+            # Adjust speed
+            distance_wp_tl = 0.
+
+            current_wp_idx = self.traffic_wp_idx
+            prev_wp_idx = self.traffic_wp_idx
+            while distance_wp_tl < dec_dist:
+              current_wp_speed = self.get_waypoint_velocity(all_wp[current_wp_idx])
+              self.waypoints_decelareted.append( [current_wp_idx, current_wp_speed])
+              distance_wp_tl = self.dist_3d(all_wp[self.traffic_wp_idx].pose.pose.position, all_wp[prev_wp_idx].pose.pose.position)
+              wp_speed = 0.
+              if distance_wp_tl < DISTANCE_SECURITY_ZERO_SPEED:
+                wp_speed = 0.
+              elif distance_wp_tl < DISTANCE_SECURITY_ONE_SPEED:
+                wp_speed = 1.
+              else :
+                #we must done one step already
+                assert(prev_wp_idx != current_wp_idx)
+                wp_time = math.sqrt(2. * distance_wp_tl / dec)
+                wp_speed = min( (1. + wp_time * dec)\
+                                , self.c_max_velocity)
+              self.set_waypoint_velocity(all_wp, current_wp_idx, wp_speed)
+              prev_wp_idx = current_wp_idx
+              #iterate from the traffic light back to current car position
+              current_wp_idx = self.prev_waypoint(current_wp_idx)
+        elif (self.traffic_wp_idx == -1):
+          #restore the original speed
+          if 0 != len(self.waypoints_decelareted):
+            for entry in self.waypoints_decelareted:
+              self.set_waypoint_velocity(all_wp, entry[0], entry[1])
+            self.waypoints_decelareted = []
+            #send an update
+            self.publish_waypoints()
+            
+        return
 
     def get_waypoint_velocity(self, waypoint):
         return waypoint.twist.twist.linear.x
